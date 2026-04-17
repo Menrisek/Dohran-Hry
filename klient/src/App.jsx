@@ -5,7 +5,7 @@ function App() {
   const [hry, setHry] = useState([]);
   const [novaHra, setNovaHra] = useState({
     nazev: '',
-    datum_dohrani: '',
+    dohrani: [{ ending: '', datum: '' }],
     hodnoceni: 5,
     poznamky: ''
   });
@@ -27,38 +27,40 @@ function App() {
   const odeslatFomular = (e) => {
     e.preventDefault();
 
-    // 1. VALIDACE NÁZVU: Nesmí být prázdný a nesmí obsahovat jen mezery
+    // 1. VALIDACE NÁZVU
     if (!novaHra.nazev.trim()) {
-      setChybaFormulare('Název hry musí být vyplněn (nesmí obsahovat jen mezery).');
-      return; // Zastaví odeslání
+      setChybaFormulare('Název hry musí být vyplněn.');
+      return;
     }
 
-    // 2. VALIDACE HODNOCENÍ: Musí to být číslo od 1 do 10
+    // 2. VALIDACE HODNOCENÍ
     const hodnoceniCislo = Number(novaHra.hodnoceni);
     if (hodnoceniCislo < 1 || hodnoceniCislo > 10) {
       setChybaFormulare('Hodnocení musí být v rozmezí od 1 do 10.');
       return;
     }
 
-    // 3. VALIDACE DATA: Datum dohrání nesmí být v budoucnosti
-    if (novaHra.datum_dohrani) {
-      const vybraneDatum = new Date(novaHra.datum_dohrani);
-      const dnesniDatum = new Date();
+    // 3. VALIDACE DATA (Nová validace pro více endingů)
+    const dnesniDatum = new Date();
+    dnesniDatum.setHours(0, 0, 0, 0); // Vynulujeme čas pro dnešek
 
-      // Vynulujeme čas, abychom porovnávali jen čisté dny
-      dnesniDatum.setHours(0, 0, 0, 0);
-      vybraneDatum.setHours(0, 0, 0, 0);
+    // Projdeme všechny endingy, které uživatel přidal
+    for (const polozka of novaHra.dohrani) {
+      if (polozka.datum) {
+        const vybraneDatum = new Date(polozka.datum);
+        vybraneDatum.setHours(0, 0, 0, 0);
 
-      if (vybraneDatum > dnesniDatum) {
-        setChybaFormulare('Kámo, datum dohrání nemůže být v budoucnosti! 😅');
-        return;
+        if (vybraneDatum > dnesniDatum) {
+          setChybaFormulare('Žádné datum dohrání nemůže být v budoucnosti!');
+          return;
+        }
       }
     }
 
-    // Pokud vše projde, vymažeme předchozí chybové hlášky
+    // Pokud vše projde v pořádku, vymažeme předchozí chyby
     setChybaFormulare('');
 
-    // Zbytek funkce zůstává stejný - odeslání na server
+    // Zbytek funkce - odeslání na server
     const metoda = idUpravovaneho ? 'PUT' : 'POST';
     const url = idUpravovaneho
         ? `http://localhost:3000/api/hry/${idUpravovaneho}`
@@ -76,31 +78,43 @@ function App() {
           } else {
             setHry([...hry, data]);
           }
-          setNovaHra({ nazev: '', datum_dohrani: '', hodnoceni: 5, poznamky: '' });
+          // RESET FORMULÁŘE (včetně prázdného řádku pro ending)
+          setNovaHra({ nazev: '', dohrani: [{ ending: '', datum: '' }], hodnoceni: 5, poznamky: '' });
           setIdUpravovaneho(null);
         });
   };
 
   const smazatHru = (id) => {
-    // Zeptáme se uživatele a výsledek uložíme do proměnné
-    const potvrzeni = window.confirm('Opravdu chceš tento záznam smazat? Akce je nevratná.');
-
-    // Pokud uživatel kliknul na "OK" (potvrzeni je true), provedeme smazání
+    const potvrzeni = window.confirm('Opravdu chceš tento záznam smazat?');
     if (potvrzeni) {
-      fetch(`http://localhost:3000/api/hry/${id}`, {
-        method: 'DELETE'
-      })
-          .then(() => {
-            setHry(hry.filter(h => h.id !== id));
-          })
-          .catch(chyba => console.error('Chyba při mazání:', chyba));
+      fetch(`http://localhost:3000/api/hry/${id}`, { method: 'DELETE' })
+          .then(() => setHry(hry.filter(h => h.id !== id)));
     }
-    // Pokud kliknul na "Zrušit", funkce prostě skončí a nic se nestane
   };
 
   const klikNaUpravit = (hra) => {
-    setNovaHra({ ...hra });
+    // Zajistíme, aby i starší hry bez pole 'dohrani' měly aspoň prázdné pole
+    setNovaHra({
+      ...hra,
+      dohrani: hra.dohrani || [{ ending: '', datum: '' }]
+    });
     setIdUpravovaneho(hra.id);
+    setChybaFormulare('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const pridatRadekDohrani = () => {
+    setNovaHra({
+      ...novaHra,
+      dohrani: [...novaHra.dohrani, { ending: '', datum: '' }]
+    });
+  };
+
+  const zmenaDohrani = (index, e) => {
+    const { name, value } = e.target;
+    const noveDohrani = [...novaHra.dohrani];
+    noveDohrani[index][name] = value;
+    setNovaHra({ ...novaHra, dohrani: noveDohrani });
   };
 
   return (
@@ -114,18 +128,36 @@ function App() {
           <form onSubmit={odeslatFomular}>
             <input type="text" name="nazev" placeholder="Název hry" value={novaHra.nazev} onChange={zmenaVstupu} required />
 
-            <div className="form-radka">
-              <div className="input-skupina">
-                <label>Datum dohrání</label>
-                <input type="date" name="datum_dohrani" value={novaHra.datum_dohrani} onChange={zmenaVstupu} />
-              </div>
-              <div className="input-skupina">
-                <label>Hodnocení (1-10)</label>
-                <input type="number" name="hodnoceni" min="1" max="10" value={novaHra.hodnoceni} onChange={zmenaVstupu} />
-              </div>
+            <div className="input-skupina">
+              <label>Dohrání (Endingy a data)</label>
+              {novaHra.dohrani.map((d, index) => (
+                  <div key={index} className="form-radka-dohrani">
+                    <input
+                        type="text"
+                        name="ending"
+                        placeholder="Název endingu"
+                        value={d.ending}
+                        onChange={(e) => zmenaDohrani(index, e)}
+                    />
+                    <input
+                        type="date"
+                        name="datum"
+                        value={d.datum}
+                        onChange={(e) => zmenaDohrani(index, e)}
+                    />
+                  </div>
+              ))}
+              <button type="button" onClick={pridatRadekDohrani} className="btn-maly">
+                + Přidat další ending
+              </button>
             </div>
 
-            <textarea name="poznamky" placeholder="Tvoje poznámky ke hře..." value={novaHra.poznamky} onChange={zmenaVstupu}></textarea>
+            <div className="input-skupina">
+              <label>Hodnocení (1-10)</label>
+              <input type="number" name="hodnoceni" min="1" max="10" value={novaHra.hodnoceni} onChange={zmenaVstupu} />
+            </div>
+
+            <textarea name="poznamky" placeholder="Poznámky..." value={novaHra.poznamky} onChange={zmenaVstupu}></textarea>
 
             <div className="form-tlacitka">
               <button type="submit" className="btn-primarni">{idUpravovaneho ? 'Uložit změny' : 'Přidat do deníku'}</button>
@@ -147,8 +179,13 @@ function App() {
               <div key={hra.id} className="herni-karta">
                 <h2>{hra.nazev}</h2>
 
-                <div className="karta-info">
-                  <span className="odznak datum">📅 {hra.datum_dohrani ? new Date(hra.datum_dohrani).toLocaleDateString('cs-CZ') : 'Neuvedeno'}</span>
+                <div className="karta-info-seznam">
+                  {hra.dohrani && hra.dohrani.map((d, i) => (
+                      <div key={i} className="odznak-container">
+                        <span className="odznak ending">🏆 {d.ending || 'Dohráno'}</span>
+                        <span className="odznak datum">📅 {d.datum ? new Date(d.datum).toLocaleDateString('cs-CZ') : '---'}</span>
+                      </div>
+                  ))}
                   <span className="odznak hodnoceni">⭐ {hra.hodnoceni}/10</span>
                 </div>
 
